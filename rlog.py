@@ -374,27 +374,53 @@ def index():
                 });
         }
 
-        document.getElementById('filter-form').addEventListener('submit', function(event) {
-            event.preventDefault();
-            const formData = new FormData(this);
-            const params = Object.fromEntries(formData.entries());
-            fetchLogs('/logs', params);
-        });
-
-        window.addEventListener('load', () => {
+        function updateFormInputs() {
             const currentUrl = window.location.href;
             const url = new URL(currentUrl);
             const params = new URLSearchParams(url.search);
             const paramsList = ['level', 'thread', 'start_time', 'end_time', 'content'];
-            for(let paramName of paramsList) {
-                if(params.get(paramName)) {
-                    document.querySelector(`#filter-form>[name=${paramName}]`).value = params.get(`${paramName}`);
+
+            for (let paramName of paramsList) {
+                if (params.get(paramName)) {
+                    document.querySelector(`#filter-form>[name=${paramName}]`).value = params.get(paramName);
+                } else {
+                    document.querySelector(`#filter-form>[name=${paramName}]`).value = '';
                 }
             }
-            // Manually trigger the form submission logic
-            const formData = new FormData(document.getElementById('filter-form'));
-            const formParams = Object.fromEntries(formData.entries());
-            fetchLogs('/logs', formParams);
+        }
+
+        document.getElementById('filter-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const params = Object.fromEntries(
+                formData.entries().filter(([key, value]) => value !== '')
+            );
+
+            const queryString = new URLSearchParams(params).toString();
+            const newUrl = `${window.location.pathname}?${queryString}`;
+            window.history.pushState(null, '', newUrl);
+
+            fetchLogs('/logs', params);
+        });
+
+        // Handle back/forward navigation
+        window.addEventListener('popstate', () => {
+            updateFormInputs(); // Update form inputs
+            const currentUrl = window.location.href;
+            const url = new URL(currentUrl);
+            const params = new URLSearchParams(url.search);
+            const formParams = Object.fromEntries(params.entries());
+            fetchLogs('/logs', formParams); // Fetch logs
+        });
+
+        // Initial load: Update form inputs and fetch logs
+        window.addEventListener('load', () => {
+            updateFormInputs(); // Update form inputs
+            const currentUrl = window.location.href;
+            const url = new URL(currentUrl);
+            const params = new URLSearchParams(url.search);
+            const formParams = Object.fromEntries(params.entries());
+            fetchLogs('/logs', formParams); // Fetch logs
         });
     </script>
 </body>
