@@ -12,6 +12,7 @@ from flask import Flask, Response, request
 # python3 -m cProfile -s cumtime ./log.py > profile.txt
 RESULT_DIRECTORY_PATH = "./out"
 
+
 class Detail:
     def __init__(self, filename, lv, thread, dt, content, raw):
         self.filename = filename
@@ -31,6 +32,7 @@ class Detail:
 pattern = re.compile(
     r"^\s*\[([A-Za-z0-9]+)\s*([A-Za-z0-9\s_\-!@#$%^&*()_+|<?.:=\[\],]+?),(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d+)\]:(.*)$"
 )
+
 
 def read_file(files, include_dt=False):
     detail = None
@@ -165,10 +167,44 @@ def cli_main(args):
 
 
 app = Flask(__name__)
+search_index = None
+
+
+def init_index():
+    args = parse_arguments()
+    index = {}
+    files = path_to_files(args.input_file)
+    for detail in read_file(files, include_dt=True):
+        filename = str(detail.filename)
+        if filename not in index:
+            index[filename] = {
+                "min_datetime": None,
+                "max_datetime": None,
+                "thread": set(),
+            }
+
+        if (
+            index[filename]["min_datetime"] is None
+            or detail.dt < index[filename]["min_datetime"]
+        ):
+            index[filename]["min_datetime"] = detail.dt
+
+        if (
+            index[filename]["max_datetime"] is None
+            or detail.dt > index[filename]["max_datetime"]
+        ):
+            index[filename]["max_datetime"] = detail.dt
+
+        index[filename]["thread"].add(detail.thread)
+    global search_index
+    search_index = index
 
 
 @app.route("/logs")
 def logs():
+    if not search_index:
+        return Response("Index not found", content_type="text/plain")
+
     args = parse_arguments()
     level = request.args.get("level")
     thread = request.args.get("thread")
@@ -207,7 +243,28 @@ def logs():
     )
 
     def generate_logs():
+        def filter_file(file):
+            pathname = str(file)
+            index = search_index.get(pathname)
+            if not index:
+                return True
+            if reqargs.thread:
+                anyMatch = False
+                for thread in index["thread"]:
+                    for pattern in reqargs.thread:
+                        if pattern.match(thread):
+                            anyMatch = True
+                if not anyMatch:
+                    return False
+            if reqargs.start_time and reqargs.start_time > index["max_datetime"]:
+                return False
+            if reqargs.end_time and reqargs.end_time < index["min_datetime"]:
+                return False
+            return True
+
         files = path_to_files(args.input_file)
+        files = [file for file in files if filter_file(file)]
+
         result_count = 0
         for detail in read_file(files, reqargs.start_time or reqargs.end_time):
             if filter_detail(detail, reqargs):
@@ -435,6 +492,7 @@ if __name__ == "__main__":
         import webbrowser
 
         # webbrowser.open("http://localhost:5000")
+        init_index()
         app.run(use_reloader=False)
     else:
         cli_main(args)
