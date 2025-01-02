@@ -216,16 +216,16 @@ def logs():
         if not time_str:
             return None
         try:
-            return datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+            dt = datetime.strptime(time_str, "%m-%d %H:%M:%S.%f")
         except ValueError:
             try:
                 dt = datetime.strptime(time_str, "%m-%d %H:%M:%S")
-                if default_year is not None:
-                    dt = dt.replace(year=default_year)
-                return dt
             except ValueError:
                 # Handle other formats or raise an error
                 raise ValueError(f"Invalid time format: {time_str}")
+        if default_year is not None:
+            dt = dt.replace(year=default_year)
+        return dt
 
     # Create a Namespace object with the query parameters
     reqargs = argparse.Namespace(
