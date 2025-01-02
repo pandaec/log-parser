@@ -281,7 +281,7 @@ def logs():
 
 @app.route("/")
 def index():
-    template = """<!DOCTYPE html>
+    template = r"""<!DOCTYPE html>
 <html>
 <head>
     <title>Log Viewer</title>
@@ -290,7 +290,15 @@ def index():
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+        }
+
+        body, input, button {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        }
+
+        pre, pre * {
+            font-family: 'Liberation Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace !important;
+            white-space: pre;
         }
 
         html, body {
@@ -360,11 +368,9 @@ def index():
             border: 1px solid #dee2e6;
             flex-grow: 1;
             overflow-y: auto;
-            font-family: 'Consolas', 'Monaco', monospace;
             font-size: 0.8rem;
-            line-height: 1.2;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            line-height: 1.4;  /* slightly increased for better readability */
+            white-space: pre;  /* changed from pre-wrap to preserve exact spacing */
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
@@ -383,6 +389,15 @@ def index():
 
         pre::-webkit-scrollbar-thumb:hover {
             background: #a0aec0;
+        }
+
+        .log-line {
+            cursor: pointer;
+            display: inline;
+        }
+
+        .log-line:hover {
+            background-color: rgba(66, 153, 225, 0.1);
         }
 
         .loading {
@@ -423,7 +438,20 @@ def index():
                 })
                 .then(data => {
                     logsElement.classList.remove('loading');
-                    logsElement.textContent = data || 'No logs found';
+                    if (!data) {
+                        logsElement.textContent = 'No logs found';
+                        return;
+                    }
+
+                    // TODO Temporary handling, should update server response instead
+                    // split into log entries (not just lines)
+                    const logEntries = data.split(/(?=^\[)/m);
+                    const formattedLogs = logEntries
+                        .map(entry => formatLogLine(entry.trim()))
+                        .join('\n');
+
+                    logsElement.innerHTML = formattedLogs;
+                    attachLogLineHandlers();
                 })
                 .catch(error => {
                     logsElement.classList.remove('loading');
@@ -444,6 +472,31 @@ def index():
                     document.querySelector(`#filter-form>[name=${paramName}]`).value = '';
                 }
             }
+        }
+        
+        function formatLogLine(line) {
+            // check if this line starts with a timestamp pattern
+            const timestampMatch = line.match(/^.*?(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d+)/);
+            if (!timestampMatch) return line;
+
+            // wrap only the first line in clickable div, preserve any following lines
+            const timestamp = timestampMatch[1];
+            return `<div class="log-line" data-timestamp="${timestamp}">${line}</div>`;
+        }
+
+        function attachLogLineHandlers() {
+            document.querySelectorAll('.log-line').forEach(line => {
+                line.addEventListener('click', () => {
+                    const ts = line.dataset.timestamp;
+                    if (!ts) return;
+
+                    const params = new URLSearchParams({
+                        start_time: ts,
+                    });
+
+                    window.open(`${window.location.pathname}?${params.toString()}`, '_blank');
+                });
+            });
         }
 
         document.getElementById('filter-form').addEventListener('submit', function(event) {
@@ -493,6 +546,6 @@ if __name__ == "__main__":
 
         # webbrowser.open("http://localhost:5000")
         init_index()
-        app.run(use_reloader=False)
+        app.run(use_reloader=False, port=28515)
     else:
         cli_main(args)
