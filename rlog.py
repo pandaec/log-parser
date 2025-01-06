@@ -7,26 +7,34 @@ from datetime import datetime
 import shutil
 from fnmatch import fnmatch
 
-from flask import Flask, Response, request
+from flask import Flask, Response, request, jsonify
 
 # python3 -m cProfile -s cumtime ./log.py > profile.txt
 RESULT_DIRECTORY_PATH = "./out"
 
 
 class Detail:
-    def __init__(self, filename, lv, thread, dt, content, raw):
+    def __init__(self, filename, level, thread, dt, content, raw):
         self.filename = filename
-        self.lv = lv
+        self.level = level
         self.thread = thread
         self.dt = dt
         self.content = content
         self.raw = raw
 
     def __str__(self):
-        return f"Detail(filename={self.filename}, dt={self.dt}, lv={self.lv}, thread={self.thread}, content={self.content[:50]})"
+        return f"Detail(filename={self.filename}, dt={self.dt}, level={self.level}, thread={self.thread}, content={self.content[:50]})"
 
     def __repr__(self):
-        return f"Detail('{self.filename}', '{self.lv}', '{self.thread}', '{self.dt}', '{self.content}')"
+        return f"Detail('{self.filename}', '{self.level}', '{self.thread}', '{self.dt}', '{self.content}')"
+
+    def to_dict(self):
+        return {
+            "level": self.level,
+            "thread": self.thread,
+            "timestamp": self.dt,
+            "raw": self.raw,
+        }
 
 
 pattern = re.compile(
@@ -51,7 +59,7 @@ def read_file(files, include_dt=False):
                     lv, thread, dt, content = m.group(1, 2, 3, 4)
                     if include_dt:
                         dt = datetime.fromisoformat(f"{year}-{dt}")
-                    detail = Detail(file, lv, thread, dt, content, line)
+                    detail = Detail(file, lv, thread, dt, content, line.strip())
                     should_concat_line = True
                 elif detail:
                     if should_concat_line:
@@ -274,9 +282,9 @@ def logs():
                     and result_count > 1000
                 ):
                     break
-                yield detail.raw
+                yield detail.to_dict()
 
-    return Response(generate_logs(), content_type="text/plain")
+    return jsonify(list(generate_logs()))
 
 
 @app.route("/")
@@ -443,11 +451,9 @@ def index():
                         return;
                     }
 
-                    // TODO Temporary handling, should update server response instead
-                    // split into log entries (not just lines)
-                    const logEntries = data.split(/(?=^\[)/m);
-                    const formattedLogs = logEntries
-                        .map(entry => formatLogLine(entry.trim()))
+                    const resp = JSON.parse(data);
+                    const formattedLogs = resp
+                        .map(formatLogLine)
                         .join('\n');
 
                     logsElement.innerHTML = formattedLogs;
@@ -475,13 +481,10 @@ def index():
         }
         
         function formatLogLine(line) {
-            // check if this line starts with a timestamp pattern
-            const timestampMatch = line.match(/^.*?(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d+)/);
-            if (!timestampMatch) return line;
-
-            // wrap only the first line in clickable div, preserve any following lines
-            const timestamp = timestampMatch[1];
-            return `<div class="log-line" data-timestamp="${timestamp}">${line}</div>`;
+            const timestamp = line['timestamp'];
+            const thread = line['thread'];
+            const content = line['raw'];
+            return `<div class="log-line" data-timestamp="${timestamp}" data-thread="${thread}">${content}</div>`;
         }
 
         function attachLogLineHandlers() {
@@ -492,6 +495,7 @@ def index():
 
                     const params = new URLSearchParams({
                         start_time: ts,
+                        thread: `${line.dataset.thread}$`,
                     });
 
                     window.open(`${window.location.pathname}?${params.toString()}`, '_blank');
